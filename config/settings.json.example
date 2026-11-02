@@ -1,0 +1,9 @@
+{
+  "colorScheme": "dark",
+  "model": "Gemini 3.8 Flash (Medium)",
+  "notifications": true,
+  "runningLightSpeed": "off",
+  "toolPermission": "always-proceed",
+  "trustedWorkspaces": [],
+  "verbosity": "low"
+}

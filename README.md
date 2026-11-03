@@ -34,6 +34,19 @@ O fluxo é construído sobre 7 princípios fundamentais definidos em `config/rul
 
 ---
 
+## 🤖 Plugin Enterprise Multi-Agent (`enterprise-multiagent`)
+
+O repositório inclui a frota corporativa de subagentes e portões determinísticos:
+
+| Subagente | Modelo | Papel & Especialidade |
+|---|---|---|
+| **`flash-explorer`** | `Gemini Flash` | Reconhecimento rápido de código (read-only), rastreamento de AST/dependências e triagem de logs sem poluir a janela de contexto. |
+| **`flash-implementer`** | `Gemini Flash` | Implementação de escopo delimitado (*Bounded Context*) com validação unitária local (Shift-Left) e menor diff funcional (Ponytail). |
+| **`flash-qa-gatekeeper`** | `Gemini Flash` | **Falsification Mindset**: tentativa ativa de falsificar a implementação via testes de borda (BVA, EP), suites de regressão e Quality Gates determinísticos. |
+| **`flash-security-auditor`** | `Gemini Flash` | Threat Modeling e auditoria adversarial (OWASP, segredos, CWE-78, CWE-89, CWE-22, gates clínicos) com classificação de explorabilidade. |
+
+---
+
 ## 🧰 Skills Incluídas
 
 | Skill | Descrição |
@@ -105,12 +118,22 @@ antigravity-flow/
 ├── README.md                   # Documentação completa
 └── config/
     ├── settings.json.example   # Template limpo de configurações do CLI
+    ├── AGENTS.md               # Diretrizes globais de engenharia e orquestração
+    ├── flags.json              # Feature flags do harness (Adaptive Sizing Gate)
     ├── rules/
     │   └── model-routing.md    # Regra mestra de orquestração adaptativa
-    └── skills/
-        ├── caveman/            # Skill de compressão telegráfica
-        ├── graphify/           # Suíte de visualização e consulta de grafos de código
-        └── ponytail*/          # Suíte Ponytail (audit, debt, gain, review, help)
+    ├── skills/
+    │   ├── caveman/            # Skill de compressão telegráfica
+    │   ├── graphify/           # Suíte de visualização e consulta de grafos de código
+    │   └── ponytail*/          # Suíte Ponytail (audit, debt, gain, review, help)
+    └── plugins/
+        └── enterprise-multiagent/
+            ├── plugin.json     # Manifesto do plugin
+            ├── hooks.json      # Hooks de auditoria e ciclo de vida
+            ├── agents/         # Definições dos 4 subagentes Flash
+            ├── rules/          # Regras operacionais do plugin
+            ├── scripts/        # Task Sizing Gate, Execution Policy e Interceptor
+            └── skills/         # Skill multiagent-orchestrator
 ```
 
 ---

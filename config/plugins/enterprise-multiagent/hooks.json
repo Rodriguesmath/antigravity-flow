@@ -1,0 +1,30 @@
+{
+  "task-sizing-gate-audit": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "python3 /home/rodrigues/.gemini/config/plugins/enterprise-multiagent/scripts/policy_lifecycle_manager.py hook-session-start",
+        "timeout": 15
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "invoke_subagent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /home/rodrigues/.gemini/config/plugins/enterprise-multiagent/scripts/hook_interceptor.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python3 /home/rodrigues/.gemini/config/plugins/enterprise-multiagent/scripts/policy_lifecycle_manager.py hook-stop",
+        "timeout": 20
+      }
+    ]
+  }
+}

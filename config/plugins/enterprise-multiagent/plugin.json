@@ -1,0 +1,11 @@
+{
+  "name": "enterprise-multiagent",
+  "displayName": "Enterprise Multi-Agent Architecture (Argon + Flash)",
+  "version": "1.0.0",
+  "description": "Arquitetura multiagente corporativa (padrão Staff/Big Tech): Gemini 4 Argon atua como Principal Architect & Orchestrator e delega execução paralela, reconhecimento, QA e auditoria de segurança para uma frota de 4 subagentes Gemini Flash.",
+  "suggestedPrompts": [
+    "Use a arquitetura multiagente para investigar, planejar e implementar esta feature em paralelo",
+    "Acione o flash-explorer e o flash-security-auditor para realizar uma auditoria completa deste módulo",
+    "Orquestre a correção deste bug com Argon planejando e a frota Flash implementando e validando no Quality Gate"
+  ]
+}

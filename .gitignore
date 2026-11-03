@@ -7,8 +7,16 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Python cache
+__pycache__/
+*.pyc
+
 # Logs & temporary files
 *.log
 scratch/
 tmp/
 brain/
+logs/
+sessions/
+history/
+.locks/

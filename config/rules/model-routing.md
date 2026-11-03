@@ -11,18 +11,26 @@ O usuário **autoriza e exige explicitamente** que todos os agentes e subagentes
 
 ---
 
-## 1. Heurística de Delegação & Fast-Path Inline (Velocidade Máxima)
+## 1. Heurística de Delegação, Fast-Path e Adaptive Task Sizing Gate
 
-Subagentes possuem custo de inicialização (cold-start de 2 a 4s). **Proibido over-engineering na orquestração:**
+Subagentes possuem custo de inicialização (cold-start de 2 a 4s) e sobrecarga de coordenação ($T_{\text{tax}} \approx 25\text{s}$ por worker). **Proibido over-engineering na orquestração:**
 
-* **Fast-Path Inline (Execução Direta sem Subagente):**
-  * Se a tarefa exigir **$\le 2$ passos simples** (ex: ler 1 função específica, alterar poucas linhas em 1 arquivo, rodar 1 comando trivial de checagem):
-  * **Execute DIRETO no orquestrador.** Não crie subagente para micro-tarefas.
-* **Quando DEVE delegar para Subagente:**
-  * Leitura e varredura massiva de arquivos/logs (> 30 linhas).
-  * Implementação de novos módulos, componentes ou refatorações com múltiplos arquivos.
-  * Tarefas de compilação/testes iterativos em loop.
-  * Múltiplas tarefas independentes disparadas em **paralelo real**.
+* **Etapa 1: Fast-Path Inline (Primeira Etapa Inegociável):**
+  * Se a tarefa exigir **$\le 2$ passos simples** (ex: ler 1 função específica, alterar poucas linhas em 1 arquivo, rodar 1 comando trivial de checagem) ou for um bugfix atômico:
+  * **Execute DIRETO no orquestrador.** Não acione subagentes nem avalie o Sizing Gate. Velocidade máxima.
+* **Etapa 2: Adaptive Task Sizing Gate (Somente para Tarefas Fora do Fast-Path):**
+  * Para tarefas maiores (múltiplos módulos, refatorações, features completas):
+  * **Feature Flag**: `ADAPTIVE_TASK_SIZING_ENABLED` (gerenciado em `~/.gemini/config/flags.json` ou variável de ambiente; default: `true`).
+  * Se `ADAPTIVE_TASK_SIZING_ENABLED=false`: o harness segue o fluxo convencional de delegação.
+  * Se `ADAPTIVE_TASK_SIZING_ENABLED=true`: avalie o modelo analítico de custo antes do fan-out:
+    $$\text{Expected Speedup} = \frac{T_{\text{single}}}{T_{\text{multi}}} \ge 1.20$$
+    * **INLINE**: se $\text{Expected Speedup} < 1.20$ (o volume de trabalho por módulo não compensa a taxa de coordenação de 25s/worker), execute diretamente no orquestrador sem subagentes.
+    * **BATCH**: se houver forte dependência entre etapas ($D \ge 0.8$), delegue as tarefas agrupadas a um único implementer.
+    * **PARALLEL**: se $\text{Expected Speedup} \ge 1.20$, autorize a distribuição paralela em Dynamic DAG ($\le 4$ workers).
+* **Quando DEVE delegar para Subagente (Condicionado ao Sizing Gate):**
+  * Leitura e varredura massiva de arquivos/logs (> 30 linhas) $\rightarrow$ `flash-explorer`.
+  * Módulos disjuntos com carga de trabalho individual suficiente ($\ge 35\text{s}$) $\rightarrow$ `flash-implementer` paralelos.
+  * Testes iterativos pesados e CI $\rightarrow$ `flash-qa-gatekeeper`.
 
 ---
 
@@ -48,12 +56,13 @@ A cadeia de comando segue SEMPRE o fluxo: **Mais Inteligente (Topo) -> Subtarefa
 
 ---
 
-## 3. Padrão Unificado "Write & Verify" (Anti-Cascata)
+## 3. Padrão Unificado "Write & Verify" com Shift-Left
 
 Para desenvolvimento de código e correção de bugs:
 * **Não divida em cascata sequencial (Agente para escrever -> volta -> Agente para testar -> volta).**
-* O **Subagente Nível 2 (`flash`)** deve receber no mesmo prompt a incumbência de **escrever o código E executar a validação/teste** no seu ambiente isolado.
-* Retorna ao orquestrador apenas quando o ciclo estiver concluído e testado, cortando 50% do tempo de espera.
+* **Estágio 1 (Shift-Left no Implementer `flash`)**: O subagente recebe no mesmo prompt a incumbência de **escrever o código E executar a validação/teste unitário local** no seu módulo antes de reportar.
+* **Estágio 2 (Quality Gate & Auditoria Global)**: O orquestrador aciona os gatekeepers (`flash-qa-gatekeeper` e `flash-security-auditor`) apenas após a conclusão e/ou reconciliação das worktrees.
+* Retorna ao orquestrador apenas quando o ciclo local estiver concluído e testado, cortando 50% do tempo de espera.
 
 ---
 
@@ -111,3 +120,45 @@ Para qualquer tarefa de entendimento de código, arquitetura, relações entre a
 1. **Fast-Path (Grafo Existente):** Antes de usar grep/find/cat para entender fluxo, verifique se `graphify-out/graph.json` existe. Se existir, use **imediatamente** `graphify query "<pergunta>"` para obter a resposta estruturada.
 2. **Projetos Novos / Não Mapeados:** Se precisar entender a arquitetura global de um projeto ou repositório e `graphify-out/` não existir, execute `/graphify` para criar o grafo de conhecimento antes de varrer arquivos cegamente.
 3. **Subagentes de Pesquisa:** Ao delegar tarefas exploratórias para subagentes Nível 3 (`research`), instrua-os a usar `graphify query` caso o grafo esteja disponível.
+
+---
+
+## 8. Scheduler Adaptativo, Execução Especulativa, Circuit Breaker e Telemetria
+
+Para garantir resiliência operacional e proteção contra runaway costs:
+
+1. **Scheduler Adaptativo e Controle de Concorrência**:
+   - Concorrência máxima permitida: $\max(N_{agentes}) = \min(N_{tarefas\_disjuntas}, 4)$.
+   - Ordem topológica estrita no DAG: contratos compartilhados (schemas, headers) rodam antes de módulos folha.
+   - Adaptive Backoff: em caso de erros HTTP 429 ou degradação de latência, reduza dinamicamente o pool para $N=2$ ou $N=1$.
+2. **Execução Especulativa Orientada a Contrato**:
+   - Quando o Task Contract congela a interface (DTO, tipos, assinaturas), o `flash-qa-gatekeeper` autoriza testes de borda em paralelo à implementação pelo `flash-implementer`.
+   - Se a interface do contrato for alterada, invalide os testes especulativos.
+3. **Semantic Reconciliation Gate**:
+   - `Workspace="inherit"`: Apenas para arquivos estritamente disjuntos sem colisão de escrita.
+   - `Workspace="share"`: Árvores de trabalho isoladas via `git worktree`. **Exige Reconciliation Gate em 2 passos**:
+     1. Merge sintático (`git merge --no-ff`).
+     2. Smoke test semântico (compilação rápida/typecheck de fronteira entre módulos) antes do QA global.
+4. **Circuit Breaker no Evaluator-Optimizer**:
+   - Limite rígido de **3 iterações de auto-correção**.
+   - Em caso de falha na 3ª tentativa consecutiva: interrompa o loop, grave `scratch/circuit_breaker.log` e escalone imediatamente para intervenção humana.
+5. **Telemetria Avançada & FPAR**:
+   - Cada entrega final deve emitir o bloco padronizado de métricas:
+     ```yaml
+     TELEMETRY:
+       WALL_CLOCK_SEC: <tempo_total>
+       CRITICAL_PATH_SEC: <tempo_caminho_critico>
+       SUBAGENTS_SPAWNED: <total>
+       CONCURRENCY_PEAK: <pico>
+       FIRST_PASS_APPROVAL: <TRUE | FALSE>
+       OPTIMIZER_RETRIES: <0..3>
+       RECONCILIATION_STATUS: <CLEAN | SEMANTIC_ERROR | CONFLICT_RESOLVED | N/A>
+       QUALITY_GATE: <PASS | FAIL>
+       SECURITY_AUDIT: <APPROVED | REJECTED>
+       TASK_SIZING_DECISION: <FAST_PATH | INLINE | BATCH | PARALLEL | DISABLED>
+       ESTIMATED_SINGLE_TIME: <segundos | N/A>
+       ESTIMATED_MULTI_TIME: <segundos | N/A>
+       EXPECTED_SPEEDUP: <ratio | N/A>
+       ESTIMATION_CONFIDENCE: <HIGH | MEDIUM | LOW | N/A>
+       ACTUAL_SPEEDUP: <ratio | N/A>
+     ```
